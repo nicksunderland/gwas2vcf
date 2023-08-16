@@ -30,7 +30,8 @@ def main():
     )
     parser.add_argument(
         "--data",
-        dest="data",
+        type=json.loads,
+        dest='data',
         required=False,
         help="Path to GWAS summary stats. If not present then must be specified as 'data' in json file",
     )
@@ -99,7 +100,8 @@ def main():
     try:
         schema = Param(strict=True)
         with open(args.json, encoding='utf8') as json_fh:
-            json_data = schema.load(json.load(json_fh)).data
+            json_config = json.load(json_fh)
+            json_data = schema.load(json_config).data
             logging.info(f"Parameters: {json_data}")
     except json.decoder.JSONDecodeError as exception_name:
         logging.error(f"Could not read json parameter file: {exception_name}")
@@ -145,7 +147,8 @@ def main():
         logging.error("Total study number of controls must be a positive number")
         sys.exit()
 
-    if not os.path.isfile(args.data):
+    #if not os.path.isfile(args.data):
+    if not all([os.path.isfile(path) for path in args.data.values()]):
         logging.error(f"{args.data} file does not exist")
         sys.exit()
 
@@ -171,29 +174,48 @@ def main():
     # read in data
     # harmonise, left align and trim on-the-fly and write to pickle format
     # keep file index for each record and chromosome position to write out karyotypically sorted records later
-    with pysam.FastaFile(args.ref) as fasta:
-        gwas, idx, sample_metadata = Gwas.read_from_file(
-            args.data,
-            fasta,
-            json_data["chr_col"],
-            json_data["pos_col"],
-            json_data["ea_col"],
-            json_data["oa_col"],
-            json_data["beta_col"],
-            json_data["se_col"],
-            json_data["pval_col"],
-            json_data["delimiter"],
-            json_data["header"],
-            ncase_col_num=json_data.get("ncase_col"),
-            rsid_col_num=json_data.get("snp_col"),
-            ea_af_col_num=json_data.get("eaf_col"),
-            nea_af_col_num=json_data.get("oaf_col"),
-            imp_z_col_num=json_data.get("imp_z_col"),
-            imp_info_col_num=json_data.get("imp_info_col"),
-            ncontrol_col_num=json_data.get("ncontrol_col"),
-            alias=alias,
-            dbsnp=dbsnp,
-        )
+    gwas_dict, idx_dict, sample_metadata_dict = {}, {}, {}
+    for trait_id in args.data.keys(): #args.id:
+        with pysam.FastaFile(args.ref) as fasta:
+            gwas_dict[trait_id], idx_dict[trait_id], sample_metadata_dict[trait_id] = Gwas.read_from_file(
+                args.data[trait_id],
+                fasta,
+                json_data["chr_col"],
+                json_data["pos_col"],
+                json_data["ea_col"],
+                json_data["oa_col"],
+                json_data["beta_col"],
+                json_data["se_col"],
+                json_data["pval_col"],
+                json_data["delimiter"],
+                json_data["header"],
+                ncase_col_num=json_data.get("ncase_col"),
+                rsid_col_num=json_data.get("snp_col"),
+                ea_af_col_num=json_data.get("eaf_col"),
+                nea_af_col_num=json_data.get("oaf_col"),
+                imp_z_col_num=json_data.get("imp_z_col"),
+                imp_info_col_num=json_data.get("imp_info_col"),
+                ncontrol_col_num=json_data.get("ncontrol_col"),
+                call_rate_col_num=json_data.get("call_rate_col"),
+                ambiguous_col_num=json_data.get("ambiguous_col"),
+                strand_col_num=json_data.get("strand_col"),
+                type_col_num=json_data.get("type_col"),
+                alias=alias,
+                dbsnp=dbsnp,
+            )
+
+        if args.cohort_controls is not None:
+            sample_metadata_dict[trait_id]["TotalControls"] = args.cohort_controls
+
+        if args.cohort_cases is not None:
+            sample_metadata_dict[trait_id]["TotalCases"] = args.cohort_cases
+
+        if "ncase_col" in json_data or args.cohort_cases is not None:
+            sample_metadata_dict[trait_id]["StudyType"] = "CaseControl"
+        else:
+            sample_metadata_dict[trait_id]["StudyType"] = "Continuous"
+
+    # end loop
 
     if dbsnp is not None:
         dbsnp.close()
@@ -204,33 +226,22 @@ def main():
         "file_date": datetime.now().isoformat(),
     }
 
-    if args.cohort_controls is not None:
-        sample_metadata["TotalControls"] = args.cohort_controls
-
-    if args.cohort_cases is not None:
-        sample_metadata["TotalCases"] = args.cohort_cases
-
-    if "ncase_col" in json_data or args.cohort_cases is not None:
-        sample_metadata["StudyType"] = "CaseControl"
-    else:
-        sample_metadata["StudyType"] = "Continuous"
-
     # write to VCF
     # loop over sorted chromosome position and get record using random access
-    Vcf.write_to_file(
-        gwas,
-        idx,
+    Vcf.write_to_file_multi_sample(
+        gwas_dict,  # sample dict
+        idx_dict,  # sample dict
         args.out,
         fasta,
         json_data["build"],
-        args.id,
-        sample_metadata,
+        sample_metadata_dict,  # sample dict
         file_metadata,
         args.csi,
     )
 
     # close temp file to release disk space
-    gwas.close()
+    for g in gwas_dict.values():
+        g.close()
 
 
 if __name__ == "__main__":

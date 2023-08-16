@@ -28,6 +28,10 @@ class Gwas:
         ncase,
         imp_info,
         imp_z,
+        call_rate,
+        ambig,
+        strand,
+        vtype,
         vcf_filter="PASS",
     ):
 
@@ -44,6 +48,10 @@ class Gwas:
         self.ncase = ncase
         self.imp_info = imp_info
         self.imp_z = imp_z
+        self.call_rate = call_rate,
+        self.ambig = ambig,
+        self.strand = strand,
+        self.vtype = vtype,
         self.vcf_filter = vcf_filter
 
     def reverse_sign(self):
@@ -144,10 +152,13 @@ class Gwas:
         imp_z_col_num=None,
         imp_info_col_num=None,
         ncontrol_col_num=None,
+        call_rate_col_num=None,
+        ambiguous_col_num=None,
+        strand_col_num=None,
+        type_col_num=None,
         alias=None,
         dbsnp=None,
     ):
-
         rsid_pattern = re.compile("^rs[0-9]*$")
 
         logging.info(f"Reading summary stats and mapping to FASTA: {input_file_path}")
@@ -168,6 +179,10 @@ class Gwas:
         logging.debug(f"IMP Z Score Field: {imp_z_col_num}")
         logging.debug(f"IMP INFO Field: {imp_info_col_num}")
         logging.debug(f"N Control Field: {ncontrol_col_num}")
+        logging.debug(f"Call rate Field: {call_rate_col_num}")
+        logging.debug(f"Ambiguous flag Field: {ambiguous_col_num}")
+        logging.debug(f"Strand Field: {strand_col_num}")
+        logging.debug(f"Variant type Field: {type_col_num}")
 
         # TODO use namedtuple
         metadata = {
@@ -205,27 +220,27 @@ class Gwas:
 
             try:
                 if alias is not None:
-                    if columns[chrom_col_num] in alias:
-                        chrom = alias[columns[chrom_col_num]]
+                    if columns[int(chrom_col_num)] in alias:
+                        chrom = alias[columns[int(chrom_col_num)]]
                     else:
-                        chrom = columns[chrom_col_num]
+                        chrom = columns[int(chrom_col_num)]
                 else:
-                    chrom = columns[chrom_col_num]
+                    chrom = columns[int(chrom_col_num)]
             except Exception as exception_name:
                 logging.debug(f"Skipping {columns}: {exception_name}")
                 metadata["VariantsNotRead"] += 1
                 continue
 
             try:
-                pos = int(float(columns[pos_col_num]))  # float is for scientific notation
+                pos = int(float(columns[int(pos_col_num)]))  # float is for scientific notation
                 assert pos > 0
             except Exception as exception_name:
                 logging.debug(f"Skipping {columns}: {exception_name}")
                 metadata["VariantsNotRead"] += 1
                 continue
 
-            ref = str(columns[nea_col_num]).strip().upper()
-            alt = str(columns[ea_col_num]).strip().upper()
+            ref = str(columns[int(nea_col_num)]).strip().upper()
+            alt = str(columns[int(ea_col_num)]).strip().upper()
 
             if ref == alt:
                 logging.debug(f"Skipping: ref={ref} is the same as alt={alt}")
@@ -233,21 +248,21 @@ class Gwas:
                 continue
 
             try:
-                b = float(columns[effect_col_num])
+                b = float(columns[int(effect_col_num)])
             except Exception as exception_name:
                 logging.debug(f"Skipping {columns}: {exception_name}")
                 metadata["VariantsNotRead"] += 1
                 continue
 
             try:
-                se = float(columns[se_col_num])
+                se = float(columns[int(se_col_num)])
             except Exception as exception_name:
                 logging.debug(f"Skipping {columns}: {exception_name}")
                 metadata["VariantsNotRead"] += 1
                 continue
 
             try:
-                pval = p_value_handler.parse_string(columns[pval_col_num])
+                pval = p_value_handler.parse_string(columns[int(pval_col_num)])
                 nlog_pval = p_value_handler.neg_log_of_decimal(pval)
             except Exception as exception_name:
                 logging.debug(f"Skipping line {columns}, {exception_name}")
@@ -256,9 +271,9 @@ class Gwas:
 
             try:
                 if ea_af_col_num is not None:
-                    alt_freq = float(columns[ea_af_col_num])
+                    alt_freq = float(columns[int(ea_af_col_num)])
                 elif nea_af_col_num is not None:
-                    alt_freq = 1 - float(columns[nea_af_col_num])
+                    alt_freq = 1 - float(columns[int(nea_af_col_num)])
                 else:
                     alt_freq = None
             except (IndexError, TypeError, ValueError) as exception_name:
@@ -266,20 +281,20 @@ class Gwas:
                 alt_freq = None
 
             try:
-                rsid = columns[rsid_col_num]
+                rsid = columns[int(rsid_col_num)]
                 assert rsid_pattern.match(rsid)
             except (IndexError, TypeError, ValueError, AssertionError) as exception_name:
                 logging.debug(f"Could not parse dbsnp identifier: {exception_name}")
                 rsid = None
 
             try:
-                ncase = float(columns[ncase_col_num])
+                ncase = float(columns[int(ncase_col_num)])
             except (IndexError, TypeError, ValueError) as exception_name:
                 logging.debug(f"Could not parse number of cases: {exception_name}")
                 ncase = None
 
             try:
-                ncontrol = float(columns[ncontrol_col_num])
+                ncontrol = float(columns[int(ncontrol_col_num)])
             except (IndexError, TypeError, ValueError) as exception_name:
                 logging.debug(f"Could not parse number of controls: {exception_name}")
                 ncontrol = None
@@ -291,16 +306,40 @@ class Gwas:
                 n = ncontrol
 
             try:
-                imp_info = float(columns[imp_info_col_num])
+                imp_info = float(columns[int(imp_info_col_num)])
             except (IndexError, TypeError, ValueError) as exception_name:
                 logging.debug(f"Could not parse imputation INFO: {exception_name}")
                 imp_info = None
 
             try:
-                imp_z = float(columns[imp_z_col_num])
+                imp_z = float(columns[int(imp_z_col_num)])
             except (IndexError, TypeError, ValueError) as exception_name:
                 logging.debug(f"Could not parse imputation Z score: {exception_name}")
                 imp_z = None
+
+            try:
+                call_rate = float(columns[int(call_rate_col_num)])
+            except (IndexError, TypeError, ValueError) as exception_name:
+                logging.debug(f"Could not parse call rate: {exception_name}")
+                call_rate = None
+
+            try:
+                ambig = columns[int(ambiguous_col_num)]
+            except (IndexError, TypeError, ValueError) as exception_name:
+                logging.debug(f"Could not parse ambiguous flag: {exception_name}")
+                ambig = None
+
+            try:
+                strand = columns[int(strand_col_num)]
+            except (IndexError, TypeError, ValueError) as exception_name:
+                logging.debug(f"Could not parse strand: {exception_name}")
+                strand = None
+
+            try:
+                vtype = columns[int(type_col_num)]
+            except (IndexError, TypeError, ValueError) as exception_name:
+                logging.debug(f"Could not parse variant type: {exception_name}")
+                vtype = None
 
             result = Gwas(
                 chrom,
@@ -316,6 +355,10 @@ class Gwas:
                 ncase,
                 imp_info,
                 imp_z,
+                call_rate,
+                ambig,
+                strand,
+                vtype
             )
 
             logging.debug(f"Extracted row: {result}")

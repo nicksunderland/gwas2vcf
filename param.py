@@ -37,11 +37,27 @@ class Param(Schema):
         required=False,
         description="Column number for number of controls (if case/control) or total sample size if continuous",
     )
+    call_rate_col = fields.Float(
+        required=False,
+        description="Column number for variant call rate",
+    )
+    ambiguous_col = fields.Float(
+        required=False,
+        description="Column number for ambiguous variant flag",
+    )
+    strand_col = fields.Float(
+        required=False,
+        description="Column number for strand character flag",
+    )
+    type_col = fields.Float(
+        required=False,
+        description="Column number for the variant type, e.g. Biallelic_SNP",
+    )
     build = fields.Str(
         required=True,
         description="Name of the genome build i.e. GRCh36, GRCh37, GRCh38",
     )
-    data = fields.Str(
+    data = fields.Dict(
         required=False,
         description="Path to input file, required if not passed in main command line parameters",
     )
