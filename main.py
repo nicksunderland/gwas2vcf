@@ -148,7 +148,7 @@ def main():
         sys.exit()
 
     #if not os.path.isfile(args.data):
-    if not all([os.path.isfile(path) for path in args.data.values()]):
+    if not all([os.path.isfile(path) for data_dict in args.data.values() for path in data_dict.values()]):
         logging.error(f"{args.data} file does not exist")
         sys.exit()
 
@@ -175,10 +175,10 @@ def main():
     # harmonise, left align and trim on-the-fly and write to pickle format
     # keep file index for each record and chromosome position to write out karyotypically sorted records later
     gwas_dict, idx_dict, sample_metadata_dict = {}, {}, {}
-    for trait_id in args.data.keys(): #args.id:
-        with pysam.FastaFile(args.ref) as fasta:
+    with pysam.FastaFile(args.ref) as fasta:
+        for trait_id, data_paths in args.data.items():
             gwas_dict[trait_id], idx_dict[trait_id], sample_metadata_dict[trait_id] = Gwas.read_from_file(
-                args.data[trait_id],
+                data_paths,
                 fasta,
                 json_data["chr_col"],
                 json_data["pos_col"],
@@ -225,6 +225,10 @@ def main():
         "Gwas2VCF_command": " ".join(sys.argv[1:]) + "; " + version,
         "file_date": datetime.now().isoformat(),
     }
+
+    # with open(args.out + ".json", "w") as fp:
+    #     json.dump(idx_dict, fp, indent=4)
+    # exit()
 
     # write to VCF
     # loop over sorted chromosome position and get record using random access

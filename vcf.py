@@ -348,20 +348,28 @@ class Vcf:
 
         for contig in fasta.references:
 
-            if not any([gwas_i.get(contig) for gwas_i in gwas_idx_dict.values()]):
-                continue
-
-            while any([gwas_i.get(contig) for gwas_i in gwas_idx_dict.values()]):
+            while any([gwas_idex.get(contig) for _, gwas_idex in gwas_idx_dict.items()]):
 
                 record = vcf.new_record()
 
-                for trait_id in gwas_file_dict.keys():
+                for trait_id, gwas_file in gwas_file_dict.items():
 
-                    if not gwas_idx_dict[trait_id]:
+                    if gwas_idx_dict[trait_id].get(contig) is None:
                         continue
 
-                    chr_pos = heappop(gwas_idx_dict[trait_id][contig])
-                    #print("chr_pos: " + str(chr_pos))
+                    if len(gwas_idx_dict[trait_id][contig]) == 0:
+                        continue
+
+                    try:
+                        chr_pos = heappop(gwas_idx_dict[trait_id][contig])
+                        #print("chr_pos: " + str(chr_pos))
+                    except IndexError as e:
+                        print(e)
+                        print(gwas_idx_dict)
+                        print("trait:" + str(trait_id))
+                        print("contig:" + str(contig))
+                        print("res: " + str(gwas_idx_dict[trait_id].get(contig)))
+                        x = 1
 
                     # load GWAS result
                     #print("seeking to chr_pos[1]: " + str(chr_pos[1]))
@@ -372,7 +380,6 @@ class Vcf:
                     result.nlog_pval = result.nlog_pval
                     #print("result.nlog_pval: " + str(result.nlog_pval))
 
-                    ## PUT BACK CHECKS HERE
                     # check floats
                     if Vcf.is_float32_lossy(result.b):
                         logging.warning(
@@ -472,7 +479,6 @@ class Vcf:
                     #print("result.dbsnpid: " + str(result.dbsnpid))
 
                     # print("record: " + str(record))
-
 
                 # write to file
                 vcf.write(record)

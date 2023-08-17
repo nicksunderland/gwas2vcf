@@ -32,7 +32,7 @@ class Gwas:
         ambig,
         strand,
         vtype,
-        vcf_filter="PASS",
+        vcf_filter="PASS"
     ):
 
         self.chrom = chrom
@@ -48,11 +48,12 @@ class Gwas:
         self.ncase = ncase
         self.imp_info = imp_info
         self.imp_z = imp_z
-        self.call_rate = call_rate,
-        self.ambig = ambig,
-        self.strand = strand,
-        self.vtype = vtype,
+        self.call_rate = call_rate
+        self.ambig = ambig
+        self.strand = strand
+        self.vtype = vtype
         self.vcf_filter = vcf_filter
+
 
     def reverse_sign(self):
         ref_old = self.ref
@@ -134,7 +135,7 @@ class Gwas:
 
     @staticmethod
     def read_from_file(
-        input_file_path,
+        input_file_paths,  # if multiple (e.g. chromosomes) then they are concatenated
         fasta,
         chrom_col_num,
         pos_col_num,
@@ -157,12 +158,12 @@ class Gwas:
         strand_col_num=None,
         type_col_num=None,
         alias=None,
-        dbsnp=None,
+        dbsnp=None
     ):
-        rsid_pattern = re.compile("^rs[0-9]*$")
+        rsid_pattern = re.compile("^rs[0-9]*")  # '$' end anchor removed to catch things like 'rs61875309:C'
 
-        logging.info(f"Reading summary stats and mapping to FASTA: {input_file_path}")
-        logging.debug(f"File path: {input_file_path}")
+        logging.info(f"Reading summary stats and mapping to FASTA: {input_file_paths}")
+        logging.debug(f"File path: {input_file_paths}")
         logging.debug(f"CHR field: {chrom_col_num}")
         logging.debug(f"POS field: {pos_col_num}")
         logging.debug(f"EA field: {ea_col_num}")
@@ -193,227 +194,231 @@ class Gwas:
             "SwitchedAlleles": 0,
             "NormalisedVariants": 0,
         }
-        file_idx = {}
-        file_name, file_extension = os.path.splitext(input_file_path)
-
-        if file_extension == ".gz":
-            logging.info("Reading gzip file")
-            f_handle = gzip.open(input_file_path, "rt")
-        else:
-            logging.info("Reading plain text file")
-            f_handle = open(input_file_path)
-
-        # skip header line (if present)
-        if header:
-            logging.info(f"Skipping header: {f_handle.readline().strip()}")
 
         # store results in a serialised temp file to reduce memory usage
         results = tempfile.TemporaryFile()
-
+        file_idx = {}
         p_value_handler = PvalueHandler()
 
-        for line in f_handle:
-            metadata["TotalVariants"] += 1
-            columns = line.strip().split(delimiter)
+        # cycle the files and concatenate
+        for file_id, input_file_path in input_file_paths.items():
 
-            logging.debug(f"Input row: {columns}")
+            file_name, file_extension = os.path.splitext(input_file_path)
 
-            try:
-                if alias is not None:
-                    if columns[int(chrom_col_num)] in alias:
-                        chrom = alias[columns[int(chrom_col_num)]]
+            if file_extension == ".gz":
+                logging.info(f"Reading gzip file: id '{file_id}', path '{input_file_path}'")
+                f_handle = gzip.open(input_file_path, "rt")
+            else:
+                logging.info(f"Reading plain text file: id '{file_id}', path: '{input_file_path}'")
+                f_handle = open(input_file_path)
+
+            # skip header line (if present)
+            if header:
+                logging.info(f"Skipping header: {f_handle.readline().strip()}")
+
+            for line in f_handle:
+                metadata["TotalVariants"] += 1
+                columns = line.strip().split(delimiter)
+                logging.debug(f"Input row: {columns}")
+
+                try:
+                    if alias is not None:
+                        if columns[int(chrom_col_num)] in alias:
+                            chrom = alias[columns[int(chrom_col_num)]]
+                        else:
+                            chrom = columns[int(chrom_col_num)]
                     else:
                         chrom = columns[int(chrom_col_num)]
-                else:
-                    chrom = columns[int(chrom_col_num)]
-            except Exception as exception_name:
-                logging.debug(f"Skipping {columns}: {exception_name}")
-                metadata["VariantsNotRead"] += 1
-                continue
-
-            try:
-                pos = int(float(columns[int(pos_col_num)]))  # float is for scientific notation
-                assert pos > 0
-            except Exception as exception_name:
-                logging.debug(f"Skipping {columns}: {exception_name}")
-                metadata["VariantsNotRead"] += 1
-                continue
-
-            ref = str(columns[int(nea_col_num)]).strip().upper()
-            alt = str(columns[int(ea_col_num)]).strip().upper()
-
-            if ref == alt:
-                logging.debug(f"Skipping: ref={ref} is the same as alt={alt}")
-                metadata["VariantsNotRead"] += 1
-                continue
-
-            try:
-                b = float(columns[int(effect_col_num)])
-            except Exception as exception_name:
-                logging.debug(f"Skipping {columns}: {exception_name}")
-                metadata["VariantsNotRead"] += 1
-                continue
-
-            try:
-                se = float(columns[int(se_col_num)])
-            except Exception as exception_name:
-                logging.debug(f"Skipping {columns}: {exception_name}")
-                metadata["VariantsNotRead"] += 1
-                continue
-
-            try:
-                pval = p_value_handler.parse_string(columns[int(pval_col_num)])
-                nlog_pval = p_value_handler.neg_log_of_decimal(pval)
-            except Exception as exception_name:
-                logging.debug(f"Skipping line {columns}, {exception_name}")
-                metadata["VariantsNotRead"] += 1
-                continue
-
-            try:
-                if ea_af_col_num is not None:
-                    alt_freq = float(columns[int(ea_af_col_num)])
-                elif nea_af_col_num is not None:
-                    alt_freq = 1 - float(columns[int(nea_af_col_num)])
-                else:
-                    alt_freq = None
-            except (IndexError, TypeError, ValueError) as exception_name:
-                logging.debug(f"Could not parse allele frequency: {exception_name}")
-                alt_freq = None
-
-            try:
-                rsid = columns[int(rsid_col_num)]
-                assert rsid_pattern.match(rsid)
-            except (IndexError, TypeError, ValueError, AssertionError) as exception_name:
-                logging.debug(f"Could not parse dbsnp identifier: {exception_name}")
-                rsid = None
-
-            try:
-                ncase = float(columns[int(ncase_col_num)])
-            except (IndexError, TypeError, ValueError) as exception_name:
-                logging.debug(f"Could not parse number of cases: {exception_name}")
-                ncase = None
-
-            try:
-                ncontrol = float(columns[int(ncontrol_col_num)])
-            except (IndexError, TypeError, ValueError) as exception_name:
-                logging.debug(f"Could not parse number of controls: {exception_name}")
-                ncontrol = None
-
-            try:
-                n = ncase + ncontrol
-            except (IndexError, TypeError, ValueError) as exception_name:
-                logging.debug(f"Could not sum cases and controls: {exception_name}")
-                n = ncontrol
-
-            try:
-                imp_info = float(columns[int(imp_info_col_num)])
-            except (IndexError, TypeError, ValueError) as exception_name:
-                logging.debug(f"Could not parse imputation INFO: {exception_name}")
-                imp_info = None
-
-            try:
-                imp_z = float(columns[int(imp_z_col_num)])
-            except (IndexError, TypeError, ValueError) as exception_name:
-                logging.debug(f"Could not parse imputation Z score: {exception_name}")
-                imp_z = None
-
-            try:
-                call_rate = float(columns[int(call_rate_col_num)])
-            except (IndexError, TypeError, ValueError) as exception_name:
-                logging.debug(f"Could not parse call rate: {exception_name}")
-                call_rate = None
-
-            try:
-                ambig = columns[int(ambiguous_col_num)]
-            except (IndexError, TypeError, ValueError) as exception_name:
-                logging.debug(f"Could not parse ambiguous flag: {exception_name}")
-                ambig = None
-
-            try:
-                strand = columns[int(strand_col_num)]
-            except (IndexError, TypeError, ValueError) as exception_name:
-                logging.debug(f"Could not parse strand: {exception_name}")
-                strand = None
-
-            try:
-                vtype = columns[int(type_col_num)]
-            except (IndexError, TypeError, ValueError) as exception_name:
-                logging.debug(f"Could not parse variant type: {exception_name}")
-                vtype = None
-
-            result = Gwas(
-                chrom,
-                pos,
-                ref,
-                alt,
-                b,
-                se,
-                nlog_pval,
-                n,
-                alt_freq,
-                rsid,
-                ncase,
-                imp_info,
-                imp_z,
-                call_rate,
-                ambig,
-                strand,
-                vtype
-            )
-
-            logging.debug(f"Extracted row: {result}")
-
-            # check alleles
-            try:
-                result.check_alleles_are_valid()
-            except AssertionError as exception_name:
-                logging.debug(f"Skipping {columns}: {exception_name}")
-                metadata["VariantsNotRead"] += 1
-                continue
-
-            # harmonise alleles
-            try:
-                result.check_reference_allele(fasta)
-            except AssertionError:
-                try:
-                    result.reverse_sign()
-                    result.check_reference_allele(fasta)
-                    metadata["SwitchedAlleles"] += 1
-                except AssertionError as exception_name:
-                    logging.debug(f"Could not harmonise {columns}: {exception_name}")
-                    metadata["VariantsNotHarmonised"] += 1
-                    continue
-            metadata["HarmonisedVariants"] += 1
-
-            # left align and trim variants
-            if len(ref) > 1 and len(alt) > 1:
-                try:
-                    result.normalise(fasta)
                 except Exception as exception_name:
-                    logging.debug(f"Could not normalise {columns}: {exception_name}")
-                    metadata["VariantsNotHarmonised"] += 1
+                    logging.debug(f"Skipping {columns}: {exception_name}")
+                    metadata["VariantsNotRead"] += 1
                     continue
-                metadata["NormalisedVariants"] += 1
 
-            # add or update dbSNP identifier
-            if dbsnp is not None:
-                result.update_dbsnp(dbsnp)
+                try:
+                    pos = int(float(columns[int(pos_col_num)]))  # float is for scientific notation
+                    assert pos > 0
+                except Exception as exception_name:
+                    logging.debug(f"Skipping {columns}: {exception_name}")
+                    metadata["VariantsNotRead"] += 1
+                    continue
 
-            # keep file position sorted by chromosome position for recall later
-            if result.chrom not in file_idx:
-                file_idx[result.chrom] = []
-            heappush(file_idx[result.chrom], (result.pos, results.tell()))
+                ref = str(columns[int(nea_col_num)]).strip().upper()
+                alt = str(columns[int(ea_col_num)]).strip().upper()
 
-            try:
-                pickle.dump(result, results)
-            except Exception as exception_name:
-                logging.error(f"Could not write to {tempfile.gettempdir()}:", exception_name)
-                raise exception_name
+                if ref == alt:
+                    logging.debug(f"Skipping: ref={ref} is the same as alt={alt}")
+                    metadata["VariantsNotRead"] += 1
+                    continue
 
-        f_handle.close()
+                try:
+                    b = float(columns[int(effect_col_num)])
+                except Exception as exception_name:
+                    logging.debug(f"Skipping {columns}: {exception_name}")
+                    metadata["VariantsNotRead"] += 1
+                    continue
+
+                try:
+                    se = float(columns[int(se_col_num)])
+                except Exception as exception_name:
+                    logging.debug(f"Skipping {columns}: {exception_name}")
+                    metadata["VariantsNotRead"] += 1
+                    continue
+
+                try:
+                    pval = p_value_handler.parse_string(columns[int(pval_col_num)])
+                    nlog_pval = p_value_handler.neg_log_of_decimal(pval)
+                except Exception as exception_name:
+                    logging.debug(f"Skipping line {columns}, {exception_name}")
+                    metadata["VariantsNotRead"] += 1
+                    continue
+
+                try:
+                    if ea_af_col_num is not None:
+                        alt_freq = float(columns[int(ea_af_col_num)])
+                    elif nea_af_col_num is not None:
+                        alt_freq = 1 - float(columns[int(nea_af_col_num)])
+                    else:
+                        alt_freq = None
+                except (IndexError, TypeError, ValueError) as exception_name:
+                    logging.debug(f"Could not parse allele frequency: {exception_name}")
+                    alt_freq = None
+
+                try:
+                    rsid = columns[int(rsid_col_num)]
+                    assert rsid_pattern.match(rsid)
+                except (IndexError, TypeError, ValueError, AssertionError) as exception_name:
+                    logging.debug(f"Could not parse dbsnp identifier: {exception_name}")
+                    rsid = None
+
+                try:
+                    ncase = float(columns[int(ncase_col_num)])
+                except (IndexError, TypeError, ValueError) as exception_name:
+                    logging.debug(f"Could not parse number of cases: {exception_name}")
+                    ncase = None
+
+                try:
+                    ncontrol = float(columns[int(ncontrol_col_num)])
+                except (IndexError, TypeError, ValueError) as exception_name:
+                    logging.debug(f"Could not parse number of controls: {exception_name}")
+                    ncontrol = None
+
+                try:
+                    n = ncase + ncontrol
+                except (IndexError, TypeError, ValueError) as exception_name:
+                    logging.debug(f"Could not sum cases and controls: {exception_name}")
+                    n = ncontrol
+
+                try:
+                    imp_z = float(columns[int(imp_z_col_num)])
+                except (IndexError, TypeError, ValueError) as exception_name:
+                    logging.debug(f"Could not parse imputation Z score: {exception_name}")
+                    imp_z = None
+
+                try:
+                    imp_info = float(columns[int(imp_info_col_num)])
+                    #print("imp_info: " + str(imp_info) + " - " + str(type(imp_info)))
+                except (IndexError, TypeError, ValueError) as exception_name:
+                    logging.debug(f"Could not parse imputation INFO: {exception_name}")
+                    imp_info = None
+
+                try:
+                    call_rate = float(columns[int(call_rate_col_num)])
+                    #print("call_rate: " + str(call_rate) + " - " + str(type(call_rate)))
+                except (IndexError, TypeError, ValueError) as exception_name:
+                    logging.debug(f"Could not parse call rate: {exception_name}")
+                    call_rate = None
+
+                try:
+                    ambig = columns[int(ambiguous_col_num)]
+                except (IndexError, TypeError, ValueError) as exception_name:
+                    logging.debug(f"Could not parse ambiguous flag: {exception_name}")
+                    ambig = None
+
+                try:
+                    strand = columns[int(strand_col_num)]
+                except (IndexError, TypeError, ValueError) as exception_name:
+                    logging.debug(f"Could not parse strand: {exception_name}")
+                    strand = None
+
+                try:
+                    vtype = columns[int(type_col_num)]
+                except (IndexError, TypeError, ValueError) as exception_name:
+                    logging.debug(f"Could not parse variant type: {exception_name}")
+                    vtype = None
+
+                result = Gwas(
+                    chrom,
+                    pos,
+                    ref,
+                    alt,
+                    b,
+                    se,
+                    nlog_pval,
+                    n,
+                    alt_freq,
+                    rsid,
+                    ncase,
+                    imp_info,
+                    imp_z,
+                    call_rate,
+                    ambig,
+                    strand,
+                    vtype
+                )
+
+                logging.debug(f"Extracted row: {result}")
+
+                # check alleles
+                try:
+                    result.check_alleles_are_valid()
+                except AssertionError as exception_name:
+                    logging.debug(f"Skipping {columns}: {exception_name}")
+                    metadata["VariantsNotRead"] += 1
+                    continue
+
+                # harmonise alleles
+                try:
+                    result.check_reference_allele(fasta)
+                except AssertionError:
+                    try:
+                        result.reverse_sign()
+                        result.check_reference_allele(fasta)
+                        metadata["SwitchedAlleles"] += 1
+                    except AssertionError as exception_name:
+                        logging.debug(f"Could not harmonise {columns}: {exception_name}")
+                        metadata["VariantsNotHarmonised"] += 1
+                        continue
+                metadata["HarmonisedVariants"] += 1
+
+                # left align and trim variants
+                if len(ref) > 1 and len(alt) > 1:
+                    try:
+                        result.normalise(fasta)
+                    except Exception as exception_name:
+                        logging.debug(f"Could not normalise {columns}: {exception_name}")
+                        metadata["VariantsNotHarmonised"] += 1
+                        continue
+                    metadata["NormalisedVariants"] += 1
+
+                # add or update dbSNP identifier
+                if dbsnp is not None:
+                    result.update_dbsnp(dbsnp)
+
+                # keep file position sorted by chromosome position for recall later
+                if result.chrom not in file_idx:
+                    file_idx[result.chrom] = []
+                heappush(file_idx[result.chrom], (result.pos, results.tell()))
+
+                try:
+                    pickle.dump(result, results)
+                except Exception as exception_name:
+                    logging.error(f"Could not write to {tempfile.gettempdir()}:", exception_name)
+                    raise exception_name
+
+            f_handle.close()
 
         logging.info(f'Total variants: {metadata["TotalVariants"]}')
-        logging.info(f'Variants could not be read: {metadata["VariantsNotRead"]}')
+        logging.info(f'Variants not read: {metadata["VariantsNotRead"]}')
         logging.info(f'Variants harmonised: {metadata["HarmonisedVariants"]}')
         logging.info(
             f'Variants discarded during harmonisation: {metadata["VariantsNotHarmonised"]}'
