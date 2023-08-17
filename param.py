@@ -41,10 +41,6 @@ class Param(Schema):
         required=False,
         description="Column number for variant call rate",
     )
-    ambiguous_col = fields.Float(
-        required=False,
-        description="Column number for ambiguous variant flag",
-    )
     strand_col = fields.Float(
         required=False,
         description="Column number for strand character flag",

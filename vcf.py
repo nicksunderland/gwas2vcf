@@ -257,9 +257,6 @@ class Vcf:
             '##INFO=<ID=CR,Number=A,Type=Float,Description="Variant call rate">'
         )
         header.add_line(
-            '##INFO=<ID=AM,Number=0,Type=Flag,Description="Variant ambiguous">'
-        )
-        header.add_line(
             '##INFO=<ID=SR,Number=A,Type=Character,Description="The strand">'
         )
         header.add_line(
@@ -346,39 +343,41 @@ class Vcf:
         # recall variant objects in chromosome position order
         logging.info(f"Writing variants to BCF/VCF: {path}")
 
+        # cycles the reference chromosomes
         for contig in fasta.references:
 
-            while any([gwas_idex.get(contig) for _, gwas_idex in gwas_idx_dict.items()]):
+            # while there is chromosome data in at least one trait heap, process (gets popped off as we go)
+            while any([gwas_index.get(contig) for _, gwas_index in gwas_idx_dict.items()]):
 
+                heap_tops = []
+                # find the top of each trait's heap
+                for trait_id in gwas_idx_dict.keys():
+                    try:
+                        heap_top = (gwas_idx_dict[trait_id][contig][0] + (trait_id, ))
+                        heap_tops.append(heap_top)
+                    except (KeyError, IndexError):
+                        continue
+
+                # pop the minimum (matching) chromosome positions off each heap
+                heap_pops = [heappop(gwas_idx_dict[trait_id][contig]) + (trait_id, )
+                             for pos, byte, trait_id in heap_tops
+                             if pos == min(heap_tops)[0]]
+
+                # create an empty record
                 record = vcf.new_record()
 
-                for trait_id, gwas_file in gwas_file_dict.items():
+                # process each of the traits into a record (chromosome positions are the same)
+                for chr_pos, byte_offset, trait_id in heap_pops:
 
-                    if gwas_idx_dict[trait_id].get(contig) is None:
-                        continue
-
-                    if len(gwas_idx_dict[trait_id][contig]) == 0:
-                        continue
-
-                    try:
-                        chr_pos = heappop(gwas_idx_dict[trait_id][contig])
-                        #print("chr_pos: " + str(chr_pos))
-                    except IndexError as e:
-                        print(e)
-                        print(gwas_idx_dict)
-                        print("trait:" + str(trait_id))
-                        print("contig:" + str(contig))
-                        print("res: " + str(gwas_idx_dict[trait_id].get(contig)))
-                        x = 1
+                    # the gwas summary data file (pickled);
+                    gwas_file = gwas_file_dict[trait_id]
 
                     # load GWAS result
-                    #print("seeking to chr_pos[1]: " + str(chr_pos[1]))
-                    gwas_file_dict[trait_id].seek(chr_pos[1])
-                    result = pickle.load(gwas_file_dict[trait_id])
-                    #print("result: " + str(result))
+                    gwas_file.seek(byte_offset)
+                    result = pickle.load(gwas_file)
 
+                    # extract the data into the record
                     result.nlog_pval = result.nlog_pval
-                    #print("result.nlog_pval: " + str(result.nlog_pval))
 
                     # check floats
                     if Vcf.is_float32_lossy(result.b):
@@ -408,79 +407,59 @@ class Vcf:
                             f"Imputation INFO field cannot fit into float32. Expect loss of precision for: {result.imp_info}"
                         )
 
+                    #TODO: overwriting stuff here, maybe check that each trait has the same info (if it should)
+                    # and error if not.
+                    # optimise by taking out of the loop?
                     record.chrom = result.chrom
                     assert " " not in record.chrom
-                    #print("record.chrom: " + str(record.chrom))
 
                     record.pos = result.pos
                     assert record.pos > 0
-                    #print("record.pos: " + str(record.pos))
 
                     record.id = Vcf.remove_illegal_chars(result.dbsnpid)
-                    #print("record.id: " + str(record.id))
 
                     record.alleles = (result.ref, result.alt)
-                    #print("record.alleles: " + str(record.alleles))
 
                     if result.alt_freq is not None:
                         record.info["AF"] = result.alt_freq
-                    #print("result.alt_freq: " + str(result.alt_freq))
 
                     if result.call_rate is not None:
                         record.info["CR"] = result.call_rate
-                    #print("result.call_rate: " + str(result.call_rate))
-
-                    if result.ambig is not None:
-                        record.info["AM"] = result.ambig
-                    #print("result.ambiguous: " + str(result.ambiguous))
 
                     if result.strand is not None:
                         record.info["SR"] = result.strand
-                    # print("result.strand: " + str(result.strand))
 
                     if result.vtype is not None:
                         record.info["TY"] = result.vtype
-                    #print("result.type: " + str(result.type))
 
                     if result.b is not None:
                         record.samples[trait_id]["ES"] = result.b
-                    #print("result.b: " + str(result.b))
 
                     if result.se is not None:
                         record.samples[trait_id]["SE"] = result.se
-                    #print("result.se: " + str(result.se))
 
                     if result.nlog_pval is not None:
                         record.samples[trait_id]["LP"] = result.nlog_pval
-                    #print("result.nlog_pval: " + str(result.nlog_pval))
 
                     if result.alt_freq is not None:
                         record.samples[trait_id]["AF"] = result.alt_freq
-                    #print("result.alt_freq: " + str(result.alt_freq))
 
                     if result.n is not None:
                         record.samples[trait_id]["SS"] = round(result.n)
-                    #print("result.n: " + str(result.n))
 
                     if result.imp_z is not None:
                         record.samples[trait_id]["EZ"] = result.imp_z
-                    #print("result.imp_z: " + str(result.imp_z))
 
                     if result.imp_info is not None:
                         record.samples[trait_id]["SI"] = result.imp_info
-                    #print("result.imp_info: " + str(result.imp_info))
 
                     if result.ncase is not None:
                         record.samples[trait_id]["NC"] = round(result.ncase)
-                    #print("result.ncase: " + str(result.ncase))
 
                     if result.dbsnpid is not None:
                         record.samples[trait_id]["ID"] = record.id
-                    #print("result.dbsnpid: " + str(result.dbsnpid))
 
-                    # print("record: " + str(record))
-
-                # write to file
+                # write record to file
                 vcf.write(record)
 
         vcf.close()

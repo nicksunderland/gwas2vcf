@@ -197,7 +197,6 @@ def main():
                 imp_info_col_num=json_data.get("imp_info_col"),
                 ncontrol_col_num=json_data.get("ncontrol_col"),
                 call_rate_col_num=json_data.get("call_rate_col"),
-                ambiguous_col_num=json_data.get("ambiguous_col"),
                 strand_col_num=json_data.get("strand_col"),
                 type_col_num=json_data.get("type_col"),
                 alias=alias,

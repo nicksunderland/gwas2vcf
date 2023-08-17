@@ -29,7 +29,6 @@ class Gwas:
         imp_info,
         imp_z,
         call_rate,
-        ambig,
         strand,
         vtype,
         vcf_filter="PASS"
@@ -49,7 +48,6 @@ class Gwas:
         self.imp_info = imp_info
         self.imp_z = imp_z
         self.call_rate = call_rate
-        self.ambig = ambig
         self.strand = strand
         self.vtype = vtype
         self.vcf_filter = vcf_filter
@@ -154,7 +152,6 @@ class Gwas:
         imp_info_col_num=None,
         ncontrol_col_num=None,
         call_rate_col_num=None,
-        ambiguous_col_num=None,
         strand_col_num=None,
         type_col_num=None,
         alias=None,
@@ -181,7 +178,6 @@ class Gwas:
         logging.debug(f"IMP INFO Field: {imp_info_col_num}")
         logging.debug(f"N Control Field: {ncontrol_col_num}")
         logging.debug(f"Call rate Field: {call_rate_col_num}")
-        logging.debug(f"Ambiguous flag Field: {ambiguous_col_num}")
         logging.debug(f"Strand Field: {strand_col_num}")
         logging.debug(f"Variant type Field: {type_col_num}")
 
@@ -329,12 +325,6 @@ class Gwas:
                     call_rate = None
 
                 try:
-                    ambig = columns[int(ambiguous_col_num)]
-                except (IndexError, TypeError, ValueError) as exception_name:
-                    logging.debug(f"Could not parse ambiguous flag: {exception_name}")
-                    ambig = None
-
-                try:
                     strand = columns[int(strand_col_num)]
                 except (IndexError, TypeError, ValueError) as exception_name:
                     logging.debug(f"Could not parse strand: {exception_name}")
@@ -361,7 +351,6 @@ class Gwas:
                     imp_info,
                     imp_z,
                     call_rate,
-                    ambig,
                     strand,
                     vtype
                 )
