@@ -135,9 +135,11 @@ def main():
         sys.exit()
 
     #if not os.path.isfile(args.data):
-    if not all([os.path.isfile(path) for data_dict in args.data.values() for path in data_dict.values()]):
-        logging.error(f"{args.data} file does not exist")
-        sys.exit()
+    for data_dict in args.data.values():
+        for path in data_dict.values():
+            if not os.path.isfile(path):
+                logging.error(f"{args.data} file problem \n File: {path} does not exist")
+                sys.exit()
 
     if not os.path.isfile(args.ref):
         logging.error(f"{args.ref} file does not exist")
