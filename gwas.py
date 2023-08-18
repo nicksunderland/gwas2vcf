@@ -280,9 +280,10 @@ class Gwas:
                     alt_freq = None
 
                 try:
-                    rsid = columns[int(rsid_col_num)]
-                    assert rsid_pattern.match(rsid)
-                except (IndexError, TypeError, ValueError, AssertionError) as exception_name:
+                    rsid_str = columns[int(rsid_col_num)]
+                    match = rsid_pattern.search(rsid_str)
+                    rsid = match.group(0)
+                except (IndexError, TypeError, ValueError, AttributeError) as exception_name:
                     logging.debug(f"Could not parse dbsnp identifier: {exception_name}")
                     rsid = None
 
