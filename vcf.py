@@ -347,7 +347,7 @@ class Vcf:
         for contig in fasta.references:
 
             # while there is chromosome data in at least one trait heap, process (gets popped off as we go)
-            while any([gwas_index.get(contig) for _, gwas_index in gwas_idx_dict.items()]):
+            while any([gwas_index.get(contig) for gwas_index in gwas_idx_dict.values()]):
 
                 heap_tops = []
                 # find the top of each trait's heap
