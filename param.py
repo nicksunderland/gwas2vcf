@@ -36,7 +36,7 @@ class Param(Schema):
         required=False,
         description="Column number for number of controls (if case/control) or total sample size if continuous",
     )
-    snp_col = fields.String(
+    snp_col = fields.Int(
         required=False, description="Column number for variant identifier"
     )
     eaf_col = fields.Int(
@@ -76,10 +76,6 @@ class Param(Schema):
     out = fields.Str(
         required=False,
         description="Path to output vcf file, required if not passed in main command line parameters",
-    )
-    id = fields.Str(
-        required=False,
-        description="Unique identified or name of GWAS study, required if not passed in main command line parameters",
     )
     cohort_cases = fields.Int(
         required=False, description="Total study number of cases"

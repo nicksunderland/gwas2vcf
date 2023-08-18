@@ -45,12 +45,6 @@ def main():
         "--json", dest="json", required=True, help="Path to parameters JSON"
     )
     parser.add_argument(
-        "--id",
-        dest="id",
-        required=False,
-        help="Study identifier. If not present then must be specified as 'id' in json file",
-    )
-    parser.add_argument(
         "--cohort_controls",
         type=int,
         dest="cohort_controls",
@@ -123,13 +117,6 @@ def main():
             vars(args)["out"] = json_data["out"]
         else:
             logging.error("out filename not provided in arguments or json file")
-            sys.exit()
-
-    if args.id is None:
-        if "id" in json_data.keys():
-            vars(args)["id"] = json_data["id"]
-        else:
-            logging.error("id not provided in arguments or json file")
             sys.exit()
 
     if args.cohort_cases is None and "cohort_cases" in json_data.keys():
