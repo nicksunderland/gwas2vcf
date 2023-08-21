@@ -189,7 +189,7 @@ def main():
                 strand_col_num=json_data.get("strand_col"),
                 type_col_num=json_data.get("type_col"),
                 alias=alias,
-                dbsnp=dbsnp,
+                dbsnp=dbsnp
             )
 
         if args.cohort_controls is not None:
@@ -211,7 +211,7 @@ def main():
     # metadata
     file_metadata = {
         "Gwas2VCF_command": " ".join(sys.argv[1:]) + "; " + version,
-        "file_date": datetime.now().isoformat(),
+        "file_date": datetime.now().isoformat()
     }
 
     # with open(args.out + ".json", "w") as fp:

@@ -181,6 +181,8 @@ class Gwas:
         logging.debug(f"Strand Field: {strand_col_num}")
         logging.debug(f"Variant type Field: {type_col_num}")
 
+
+
         # TODO use namedtuple
         metadata = {
             "TotalVariants": 0,

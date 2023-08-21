@@ -22,10 +22,10 @@ class Vcf:
     @staticmethod
     def is_float32_lossy(input_float):
         if (
-            input_float == 0
-            or input_float is None
-            or input_float == np.inf
-            or input_float == -np.inf
+                input_float == 0
+                or input_float is None
+                or input_float == np.inf
+                or input_float == -np.inf
         ):
             return False
 
@@ -51,15 +51,15 @@ class Vcf:
 
     @staticmethod
     def write_to_file(
-        gwas_file,
-        gwas_idx,
-        path,
-        fasta,
-        build,
-        trait_id,
-        sample_metadata=None,
-        file_metadata=None,
-        csi=False,
+            gwas_file,
+            gwas_idx,
+            path,
+            fasta,
+            build,
+            trait_id,
+            sample_metadata=None,
+            file_metadata=None,
+            csi=False,
     ):
         logging.info(f"Writing headers to BCF/VCF: {path}")
 
@@ -228,7 +228,6 @@ class Vcf:
         logging.info("Indexing output file")
         pysam.tabix_index(path, preset="vcf", force=True, csi=csi)
 
-
     """
     Write GWAS file to VCF for multisample input
     Expects an open file handle to a Pickle file of GWAS results & file index dict(chromosome[(position, offset)]) 
@@ -236,20 +235,23 @@ class Vcf:
 
     @staticmethod
     def write_to_file_multi_sample(
-        gwas_file_dict,
-        gwas_idx_dict,
-        path,
-        fasta,
-        build,
-        sample_metadata_dict=None,
-        file_metadata=None,
-        csi=False,
+            gwas_file_dict,
+            gwas_idx_dict,
+            path,
+            fasta,
+            build,
+            sample_metadata_dict=None,
+            file_metadata=None,
+            csi=False,
     ):
         logging.info(f"Writing headers to BCF/VCF: {path}")
 
         header = pysam.VariantHeader()
 
         # INFO
+        header.add_line(
+            '##INFO=<ID=RSID,Number=1,Type=String,Description="dbSNP identifier">'
+        )
         header.add_line(
             '##INFO=<ID=AF,Number=A,Type=Float,Description="Allele Frequency">'
         )
@@ -287,9 +289,6 @@ class Vcf:
         )
         header.add_line(
             '##FORMAT=<ID=NC,Number=A,Type=Integer,Description="Number of cases used to estimate genetic effect">'
-        )
-        header.add_line(
-            '##FORMAT=<ID=ID,Number=1,Type=String,Description="Study variant identifier">'
         )
 
         # META
@@ -330,11 +329,17 @@ class Vcf:
             for k in file_metadata:
                 header.add_line(f"##{k}={file_metadata[k]}")
 
+        # add study metadata
+        # if study_metadata is not None:
+        #     meta_string = ",".join(f"{k}={study_metadata[k]}" for k in study_metadata)
+        #     header.add_line(f"##STUDY=<{meta_string}>")
+
         # add SAMPLES metadata
         for trait_id in gwas_file_dict.keys():
             header.samples.add(trait_id)
             if sample_metadata_dict is not None:
-                meta_string = "".join(f",{k}={sample_metadata_dict[trait_id][k]}" for k in sample_metadata_dict[trait_id])
+                meta_string = "".join(
+                    f",{k}={sample_metadata_dict[trait_id][k]}" for k in sample_metadata_dict[trait_id])
                 header.add_line(f"##SAMPLE=<ID={trait_id}{meta_string}>")
 
         # create the vcf out
@@ -349,35 +354,30 @@ class Vcf:
             # while there is chromosome data in at least one trait heap, process (gets popped off as we go)
             while any([gwas_index.get(contig) for gwas_index in gwas_idx_dict.values()]):
 
-                heap_tops = []
+                heap_top_results = []
                 # find the top of each trait's heap
                 for trait_id in gwas_idx_dict.keys():
                     try:
-                        heap_top = (gwas_idx_dict[trait_id][contig][0] + (trait_id, ))
-                        heap_tops.append(heap_top)
+                        heap_top = gwas_idx_dict[trait_id][contig][0]   # get the top of the heap
+                        gwas_file_dict[trait_id].seek(heap_top[1])      # seek the byte offset
+                        result = pickle.load(gwas_file_dict[trait_id])  # load the result
+                        heap_top_results.append(heap_top + (trait_id,) + (result,))  # (chr_pos, byte, trait_id, result)
                     except (KeyError, IndexError):
                         continue
 
-                # pop the minimum (matching) chromosome positions off each heap
-                heap_pops = [heappop(gwas_idx_dict[trait_id][contig]) + (trait_id, )
-                             for pos, byte, trait_id in heap_tops
-                             if pos == min(heap_tops)[0]]
+                # pop the minimum (matching) positions off each heap, ensure the alleles match
+                min_res = min(heap_top_results)
+                heap_pops = [heappop(gwas_idx_dict[trait_id][contig]) + (trait_id,) + (result, )
+                             for chr_pos, byte, trait_id, result in heap_top_results
+                             if chr_pos == min_res[0] and
+                             result.ref == min_res[3].ref and
+                             result.alt == min_res[3].alt]
 
                 # create an empty record
                 record = vcf.new_record()
 
                 # process each of the traits into a record (chromosome positions are the same)
-                for chr_pos, byte_offset, trait_id in heap_pops:
-
-                    # the gwas summary data file (pickled);
-                    gwas_file = gwas_file_dict[trait_id]
-
-                    # load GWAS result
-                    gwas_file.seek(byte_offset)
-                    result = pickle.load(gwas_file)
-
-                    # extract the data into the record
-                    result.nlog_pval = result.nlog_pval
+                for chr_pos, byte_offset, trait_id, result in heap_pops:
 
                     # check floats
                     if Vcf.is_float32_lossy(result.b):
@@ -407,7 +407,7 @@ class Vcf:
                             f"Imputation INFO field cannot fit into float32. Expect loss of precision for: {result.imp_info}"
                         )
 
-                    #TODO: overwriting stuff here, maybe check that each trait has the same info (if it should)
+                    # TODO: overwriting stuff here, maybe check that each trait has the same info (if it should)
                     # and error if not.
                     # optimise by taking out of the loop?
                     record.chrom = result.chrom
@@ -419,6 +419,9 @@ class Vcf:
                     record.id = Vcf.remove_illegal_chars(result.dbsnpid)
 
                     record.alleles = (result.ref, result.alt)
+
+                    if result.dbsnpid is not None:
+                        record.info["RSID"] = record.id
 
                     if result.alt_freq is not None:
                         record.info["AF"] = result.alt_freq
@@ -455,9 +458,6 @@ class Vcf:
 
                     if result.ncase is not None:
                         record.samples[trait_id]["NC"] = round(result.ncase)
-
-                    if result.dbsnpid is not None:
-                        record.samples[trait_id]["ID"] = record.id
 
                 # write record to file
                 vcf.write(record)

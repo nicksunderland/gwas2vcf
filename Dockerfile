@@ -1,6 +1,6 @@
 FROM python:3.8
 
-MAINTAINER "Matt Lyon nicksunderland" matt.lyon@bristol.ac.uk
+MAINTAINER "Matt Lyon, this_fork-nicksunderland" matt.lyon@bristol.ac.uk
 
 # copy flask app to container
 COPY . /app
